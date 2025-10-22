@@ -6,8 +6,11 @@ import { errorHandler } from './middlewares/errorHandler';
 // Import routes (akan dibuat nanti)
 import authRoutes from './routes/authRoutes';
 import bookRoutes from './routes/bookRoutes';
-import genreRoutes from './routes/genreRoutes';
-import transactionRoutes from './routes/transactionRoutes';
+import genreRoutesImport from './routes/genreRoutes';
+import transactionRoutesImport from './routes/transactionRoutes';
+
+const genreRoutes = (genreRoutesImport as any).default || genreRoutesImport;
+const transactionRoutes = (transactionRoutesImport as any).default || transactionRoutesImport;
 
 dotenv.config();
 
