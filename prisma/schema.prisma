@@ -1,5 +1,9 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -7,71 +11,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- Model Sesuai Skema Database Kamu ---
+
 model User {
   id        String   @id @default(uuid())
-  username  String   @unique
-  email     String   @unique
-  password  String
+  username  String? @unique
+  password  String  
+  email     String   @unique 
+  orders    Order[] 
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  transactions Transaction[]
-
-  @@map("users")
-}
-
-model Genre {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  books Book[]
-
-  @@map("genres")
+  @@map("users") 
 }
 
 model Book {
-  id          String   @id @default(uuid())
-  title       String   @unique
-  author      String
-  price       Int
-  stock       Int
-  description String?
-  genreId     String   @map("genre_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id               String      @id @default(uuid())
+  title            String      @unique
+  writer           String
+  publisher        String
+  publicationYear  Int         @map("publication_year")
+  description      String?
+  price            Float 
+  stockQuantity    Int         @map("stock_quantity")
 
-  genre            Genre              @relation(fields: [genreId], references: [id])
-  transactionItems TransactionItem[]
+  genreId String   @map("genre_id")
+  genre   Genre    @relation(fields: [genreId], references: [id])
+
+  orderItems OrderItem[] // Relasi balik ke OrderItem
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") 
 
   @@map("books")
 }
 
-model Transaction {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  total     Int
+model Genre {
+  id    String @id @default(uuid())
+  name  String @unique
+  books Book[] 
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") 
+
+  @@map("genres")
+}
+
+model Order {
+  id      String   @id @default(uuid())
+  
+  userId String   @map("user_id")
+  user   User     @relation(fields: [userId], references: [id])
+
+  orderItems OrderItem[]
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user  User              @relation(fields: [userId], references: [id])
-  items TransactionItem[]
-
-  @@map("transactions")
+  @@map("orders")
 }
 
-model TransactionItem {
-  id            String   @id @default(uuid())
-  transactionId String   @map("transaction_id")
-  bookId        String   @map("book_id")
-  quantity      Int
-  price         Int
-  createdAt     DateTime @default(now()) @map("created_at")
+model OrderItem {
+  id       String @id @default(uuid())
+  quantity Int
 
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  book        Book        @relation(fields: [bookId], references: [id])
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id])
+  
+  bookId String  @map("book_id")
+  book   Book    @relation(fields: [bookId], references: [id])
 
-  @@map("transaction_items")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("order_items")
 }
