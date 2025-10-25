@@ -1,28 +1,32 @@
 import { Request, Response } from "express";
-import prisma from "../utils/prisma";
+// Sesuaikan path ini ke file prisma config kamu
+import prisma from "../config/prisma";
+import { Prisma } from "@prisma/client";
 
+// Create Book
 export const createBook = async (req: Request, res: Response) => {
   try {
+    // 1. BACA snake_case DARI BODY (sesuai Postman)
     const {
       title,
       writer,
       publisher,
-      publicationYear,
+      publication_year,
       description,
       price,
-      stockQuantity,
-      genreId,
+      stock_quantity,
+      genre_id,
     } = req.body;
 
-    // Validasi input
+    // 2. VALIDASI snake_case
     if (
       !title ||
       !writer ||
       !publisher ||
-      !publicationYear ||
-      !price ||
-      stockQuantity === undefined ||
-      !genreId
+      !publication_year ||
+      price === undefined ||
+      stock_quantity === undefined ||
+      !genre_id
     ) {
       return res.status(400).json({
         success: false,
@@ -30,9 +34,12 @@ export const createBook = async (req: Request, res: Response) => {
       });
     }
 
-    // Cek duplikasi title
-    const existingBook = await prisma.book.findUnique({
-      where: { title },
+    // 3. Cek duplikasi title (yang belum di-soft-delete)
+    const existingBook = await prisma.book.findFirst({
+      where: {
+        title,
+        deletedAt: null, // Hanya cek buku yang aktif
+      },
     });
 
     if (existingBook) {
@@ -42,10 +49,10 @@ export const createBook = async (req: Request, res: Response) => {
       });
     }
 
-    // Cek genre exists
+    // 4. Cek genre exists (yang belum di-soft-delete)
     const genre = await prisma.genre.findFirst({
       where: {
-        id: genreId,
+        id: genre_id,
         deletedAt: null,
       },
     });
@@ -57,26 +64,30 @@ export const createBook = async (req: Request, res: Response) => {
       });
     }
 
-    const book = await prisma.book.create({
+    // 5. MAPPING ke camelCase SAAT CREATE
+    const newBook = await prisma.book.create({
       data: {
         title,
         writer,
         publisher,
-        publicationYear: parseInt(publicationYear),
+        publicationYear: parseInt(publication_year), // Mapping
         description,
         price: parseFloat(price),
-        stockQuantity: parseInt(stockQuantity),
-        genreId,
+        stockQuantity: parseInt(stock_quantity), // Mapping
+        genreId: genre_id, // Mapping
       },
-      include: {
-        genre: true,
+      select: {
+        // Sesuai respons Postman
+        id: true,
+        title: true,
+        createdAt: true,
       },
     });
 
     return res.status(201).json({
       success: true,
-      message: "Book created successfully",
-      data: book,
+      message: "Book added successfully",
+      data: newBook,
     });
   } catch (error) {
     console.error("Create book error:", error);
@@ -87,15 +98,15 @@ export const createBook = async (req: Request, res: Response) => {
   }
 };
 
+// Get All Books (dengan Filter & Pagination Postman)
 export const getAllBooks = async (req: Request, res: Response) => {
   try {
     const {
       page = "1",
       limit = "10",
-      search,
-      genreId,
-      minPrice,
-      maxPrice,
+      search = "",
+      orderByTitle = "",
+      orderByPublishDate = "",
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -103,8 +114,8 @@ export const getAllBooks = async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     // Build filter
-    const where: any = {
-      deletedAt: null,
+    const where: Prisma.BookWhereInput = {
+      deletedAt: null, // Filter soft delete
     };
 
     if (search) {
@@ -115,35 +126,52 @@ export const getAllBooks = async (req: Request, res: Response) => {
       ];
     }
 
-    if (genreId) {
-      where.genreId = genreId as string;
+    // Build sorting
+    const orderBy: Prisma.BookOrderByWithRelationInput[] = [];
+    if (orderByTitle === "asc" || orderByTitle === "desc") {
+      orderBy.push({ title: orderByTitle });
     }
-
-    if (minPrice || maxPrice) {
-      where.price = {};
-      if (minPrice) where.price.gte = parseFloat(minPrice as string);
-      if (maxPrice) where.price.lte = parseFloat(maxPrice as string);
+    if (orderByPublishDate === "asc" || orderByPublishDate === "desc") {
+      orderBy.push({ publicationYear: orderByPublishDate });
+    }
+    if (orderBy.length === 0) {
+      orderBy.push({ createdAt: "desc" }); // Default sort
     }
 
     const [books, total] = await Promise.all([
       prisma.book.findMany({
         where,
         include: {
-          genre: true,
+          genre: {
+            select: { name: true }, // Ambil nama genre
+          },
         },
         skip,
         take: limitNum,
-        orderBy: {
-          createdAt: "desc",
-        },
+        orderBy,
       }),
       prisma.book.count({ where }),
     ]);
 
+    // Format data agar 'genre' jadi string (sesuai Postman)
+    const formattedBooks = books.map((book) => ({
+      id: book.id,
+      title: book.title,
+      writer: book.writer,
+      publisher: book.publisher,
+      publication_year: book.publicationYear,
+      description: book.description,
+      price: book.price,
+      stock_quantity: book.stockQuantity,
+      genre: book.genre.name, // Ubah objek genre jadi string nama
+    }));
+
     return res.status(200).json({
       success: true,
-      data: books,
-      pagination: {
+      message: "Get all book successfully",
+      data: formattedBooks,
+      meta: {
+        // Ganti 'pagination' jadi 'meta' sesuai Postman
         page: pageNum,
         limit: limitNum,
         total,
@@ -159,17 +187,21 @@ export const getAllBooks = async (req: Request, res: Response) => {
   }
 };
 
-export const getBookDetail = async (req: Request, res: Response) => {
+// Get Book by ID
+export const getBookById = async (req: Request, res: Response) => {
   try {
-    const { book_id } = req.params;
+    // 1. BACA 'id' DARI req.params (BUKAN 'book_id')
+    const { id } = req.params;
 
     const book = await prisma.book.findFirst({
       where: {
-        id: book_id,
+        id: id, // <-- GUNAKAN 'id'
         deletedAt: null,
       },
       include: {
-        genre: true,
+        genre: {
+          select: { name: true },
+        },
       },
     });
 
@@ -180,9 +212,23 @@ export const getBookDetail = async (req: Request, res: Response) => {
       });
     }
 
+    // Format data agar 'genre' jadi string (sesuai Postman)
+    const formattedBook = {
+      id: book.id,
+      title: book.title,
+      writer: book.writer,
+      publisher: book.publisher,
+      publication_year: book.publicationYear,
+      description: book.description,
+      price: book.price,
+      stock_quantity: book.stockQuantity,
+      genre: book.genre.name, // Ubah objek genre jadi string nama
+    };
+
     return res.status(200).json({
       success: true,
-      data: book,
+      message: "Get book detail successfully",
+      data: formattedBook,
     });
   } catch (error) {
     console.error("Get book detail error:", error);
@@ -193,9 +239,13 @@ export const getBookDetail = async (req: Request, res: Response) => {
   }
 };
 
+// Get Books by Genre
 export const getBooksByGenre = async (req: Request, res: Response) => {
   try {
-    const { genre_id } = req.params;
+    // 1. BACA 'genreId' DARI req.params (BUKAN 'genre_id')
+    const { genreId } = req.params;
+
+    // Ambil filter pagination (ini sudah benar di kodemu)
     const { page = "1", limit = "10", search, minPrice, maxPrice } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -205,7 +255,7 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
     // Cek genre exists
     const genre = await prisma.genre.findFirst({
       where: {
-        id: genre_id,
+        id: genreId, // <-- GUNAKAN 'genreId'
         deletedAt: null,
       },
     });
@@ -218,8 +268,8 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
     }
 
     // Build filter
-    const where: any = {
-      genreId: genre_id,
+    const where: Prisma.BookWhereInput = {
+      genreId: genreId, // <-- GUNAKAN 'genreId'
       deletedAt: null,
     };
 
@@ -241,7 +291,9 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       prisma.book.findMany({
         where,
         include: {
-          genre: true,
+          genre: {
+            select: { name: true },
+          },
         },
         skip,
         take: limitNum,
@@ -252,10 +304,25 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
       prisma.book.count({ where }),
     ]);
 
+    // Format data agar 'genre' jadi string (sesuai Postman)
+    const formattedBooks = books.map((book) => ({
+      id: book.id,
+      title: book.title,
+      writer: book.writer,
+      publisher: book.publisher,
+      publication_year: book.publicationYear,
+      description: book.description,
+      price: book.price,
+      stock_quantity: book.stockQuantity,
+      genre: book.genre.name,
+    }));
+
     return res.status(200).json({
       success: true,
-      data: books,
-      pagination: {
+      message: "Get all book by genre successfully",
+      data: formattedBooks,
+      meta: {
+        // Ganti 'pagination' jadi 'meta' sesuai Postman
         page: pageNum,
         limit: limitNum,
         total,
@@ -271,24 +338,19 @@ export const getBooksByGenre = async (req: Request, res: Response) => {
   }
 };
 
+// Update Book (PATCH)
 export const updateBook = async (req: Request, res: Response) => {
   try {
-    const { book_id } = req.params;
-    const {
-      title,
-      writer,
-      publisher,
-      publicationYear,
-      description,
-      price,
-      stockQuantity,
-      genreId,
-    } = req.body;
+    // 1. BACA 'id' DARI req.params (BUKAN 'book_id')
+    const { id } = req.params;
+
+    // 2. BACA snake_case DARI BODY
+    const { description, price, stock_quantity } = req.body;
 
     // Cek book exists
     const existingBook = await prisma.book.findFirst({
       where: {
-        id: book_id,
+        id: id, // <-- GUNAKAN 'id'
         deletedAt: null,
       },
     });
@@ -300,57 +362,36 @@ export const updateBook = async (req: Request, res: Response) => {
       });
     }
 
-    // Cek duplikasi title (kecuali book sendiri)
-    if (title && title !== existingBook.title) {
-      const duplicateBook = await prisma.book.findFirst({
-        where: {
-          title,
-          id: { not: book_id },
-        },
-      });
-
-      if (duplicateBook) {
-        return res.status(400).json({
-          success: false,
-          message: "Book with this title already exists",
-        });
-      }
-    }
-
-    // Cek genre exists jika diupdate
-    if (genreId) {
-      const genre = await prisma.genre.findFirst({
-        where: {
-          id: genreId,
-          deletedAt: null,
-        },
-      });
-
-      if (!genre) {
-        return res.status(404).json({
-          success: false,
-          message: "Genre not found",
-        });
-      }
-    }
-
+    // 3. Postman hanya minta 3 field ini yang bisa di-update
     // Build update data
-    const updateData: any = {};
-    if (title) updateData.title = title;
-    if (writer) updateData.writer = writer;
-    if (publisher) updateData.publisher = publisher;
-    if (publicationYear) updateData.publicationYear = parseInt(publicationYear);
-    if (description !== undefined) updateData.description = description;
-    if (price) updateData.price = parseFloat(price);
-    if (stockQuantity !== undefined)
-      updateData.stockQuantity = parseInt(stockQuantity);
-    if (genreId) updateData.genreId = genreId;
+    const updateData: Prisma.BookUpdateInput = {};
+    if (description !== undefined) {
+      updateData.description = description;
+    }
+    if (price !== undefined) {
+      updateData.price = parseFloat(price);
+    }
+    if (stock_quantity !== undefined) {
+      // MAPPING snake_case ke camelCase
+      updateData.stockQuantity = parseInt(stock_quantity);
+    }
+
+    // Cek jika tidak ada data valid yang dikirim
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields provided for update",
+      });
+    }
 
     const updatedBook = await prisma.book.update({
-      where: { id: book_id },
+      where: { id: id }, // <-- GUNAKAN 'id'
       data: updateData,
-      include: {
-        genre: true,
+      select: {
+        // Sesuai respons Postman
+        id: true,
+        title: true,
+        updatedAt: true,
       },
     });
 
@@ -368,14 +409,16 @@ export const updateBook = async (req: Request, res: Response) => {
   }
 };
 
+// Delete Book (Soft Delete)
 export const deleteBook = async (req: Request, res: Response) => {
   try {
-    const { book_id } = req.params;
+    // 1. BACA 'id' DARI req.params (BUKAN 'book_id')
+    const { id } = req.params;
 
     // Cek book exists
     const book = await prisma.book.findFirst({
       where: {
-        id: book_id,
+        id: id, // <-- GUNAKAN 'id'
         deletedAt: null,
       },
     });
@@ -389,7 +432,7 @@ export const deleteBook = async (req: Request, res: Response) => {
 
     // Soft delete
     await prisma.book.update({
-      where: { id: book_id },
+      where: { id: id }, // <-- GUNAKAN 'id'
       data: {
         deletedAt: new Date(),
       },
@@ -397,7 +440,7 @@ export const deleteBook = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Book deleted successfully",
+      message: "Book removed successfully", // Sesuai Postman
     });
   } catch (error) {
     console.error("Delete book error:", error);

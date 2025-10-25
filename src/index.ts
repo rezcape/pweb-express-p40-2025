@@ -1,5 +1,6 @@
-import express from "express";
+import express, { Request, Response, Application } from "express"; // Import Request, Response, Application
 import dotenv from "dotenv";
+import cors from "cors"; // <-- 1. IMPORT CORS
 import authRoutes from "./router/auth.routes";
 import genreRoutes from "./router/genre.routes";
 import bookRoutes from "./router/book.routes";
@@ -7,10 +8,11 @@ import transactionRoutes from "./router/transaction.routes";
 
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 4000;
+const app: Application = express();
+const PORT = process.env.PORT || 8080; // <-- Ganti ke 8080 agar sama dengan Postman
 
 // Middleware
+app.use(cors()); // <-- 2. GUNAKAN CORS
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -20,16 +22,18 @@ app.use("/genre", genreRoutes);
 app.use("/books", bookRoutes);
 app.use("/transactions", transactionRoutes);
 
-// Health check
-app.get("/", (req, res) => {
+// Health check (Sesuai Postman)
+// <-- 3. PINDAHKAN KE /health-check
+app.get("/health-check", (req: Request, res: Response) => {
   res.json({
     success: true,
     message: "IT Literature Shop API is running",
+    date: new Date().toUTCString(), // Tambahkan tanggal sesuai Postman
   });
 });
 
 // 404 Handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     message: "Endpoint not found",
