@@ -64,20 +64,7 @@ export const createTransaction = async (req: AuthRequest, res: Response) => {
 
     // Validasi semua book exists dan stok cukup
     // FIX: Memberi tipe pada item
-    const bookIds = orderItems.map((item: TransactionItemInput) => item.bookId);
-    const books = await prisma.book.findMany({
-      where: {
-        id: { in: bookIds },
-        deletedAt: null,
-      },
-    });
-
-    if (books.length !== bookIds.length) {
-      return res.status(404).json({
-        success: false,
-        message: "One or more books not found",
-      });
-    }
+    const bookIds = orderItems.map((item: TransactionItemInput) => item.bookId); const books = await prisma.book.findMany({ where: { id: { in: bookIds }, deletedAt: null, }, }); if (books.length !== bookIds.length) { return res.status(404).json({ success: false, message: "One or more books not found", }); }
 
     // Cek stok dan hitung total
     let totalAmount = 0;

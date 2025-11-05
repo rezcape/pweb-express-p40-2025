@@ -141,6 +141,8 @@ export const getAllBooks = async (req: Request, res: Response) => {
     const [books, total] = await Promise.all([
       prisma.book.findMany({
         where,
+
+
         include: {
           genre: {
             select: { name: true }, // Ambil nama genre
